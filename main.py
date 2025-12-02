@@ -1,24 +1,53 @@
-import discord
-import os
+from discord_webhook import DiscordWebhook
 import feedparser
+import os
 
-# 強制騙過 audioop（關鍵！）
-import types
-sys.modules['audioop'] = types.ModuleType('audioop')
+# 你的 webhook 網址（記得放進 Railway Variables）
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+if not WEBHOOK_URL:
+    print("錯誤：請設定 WEBHOOK_URL")
+    exit()
 
-client = discord.Client(intents=discord.Intents.all())
+# 所有微國家來源
+FEEDS = [
+    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",
+    "https://reddit.com/r/micronations/.rss",
+    "https://micronations.wiki/feed/",
+    "https://www.micronationworld.com/feed/"
+]
 
-@client.event
-async def on_ready():
-    print(f"【微國家 Grok】上線啦！{client.user}")
+# 記錄已發過的連結
+SEEN_FILE = "/tmp/seen_links.txt"
+seen = set()
+if os.path.exists(SEEN_FILE):
+    with open(SEEN_FILE) as f:
+        seen = set(line.strip() for line in f)
 
-@client.event
-async def on_message(message):
-    if message.author == client.user:
-        return
-    if message.content.startswith("!!"):
-        query = message.content[2:].strip()
-        # 這裡之後你可以讓它呼叫任何 API、抓新聞、聊天都行
-        await message.channel.send(f"收到啦：{query}\n等我 3 秒，我正在翻整篇微國家情報給你～")
+webhook = DiscordWebhook(url=WEBHOOK_URL)
+news = []
 
-client.run(os.environ.get("DISCORD_BOT_TOKEN"))
+for url in FEEDS:
+    feed = feedparser.parse(url)
+    for entry in feed.entries:
+        link = entry.link.strip()
+        if link in seen:
+            continue
+        title = entry.title
+        if any(k in title.lower() for k in ["micronation", "sealand", "molossia", "seborga", "ladonia", "hutt river"]):
+            news.append(f"• {title}")
+            seen.add(link)
+
+# 存檔
+with open(SEEN_FILE, "w") as f:
+    f.write("\n".join(seen))
+
+# 發送結果
+if news:
+    content = "【今日微國家新聞】\n\n" + "\n\n".join(news)
+else:
+    content = "【今日微國家新聞】\n\n今天暫無新消息～機器人正常運行中"
+
+webhook.content = content
+response = webhook.execute()
+
+print(f"成功發送！共 {len(news)} 則新聞")
