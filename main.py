@@ -1,15 +1,16 @@
-from discord_webhook import DiscordWebhook, DiscordEmbed
+from discord_webhook import DiscordWebhook
 import feedparser
 import os
-import time
+from deep_translator import GoogleTranslator   # 超穩免費翻譯
 
 webhook_url = os.environ.get("WEBHOOK_URL")
 if not webhook_url:
     print("錯誤：沒找到 WEBHOOK_URL")
     exit()
 
+# 需要翻譯的 RSS 來源
 feeds = [
-    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",  # micronation 關鍵字
+    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",
     "https://reddit.com/r/micronations/.rss",
     "https://micronations.wiki/feed/",
     "https://www.micronationworld.com/feed/"
@@ -22,38 +23,39 @@ if os.path.exists(seen_file):
         seen = set(f.read().splitlines())
 
 webhook = DiscordWebhook(url=webhook_url, rate_limit_retry=True)
-
-sent_count = 0
-news_list = []
+news_lines = []
 
 for url in feeds:
     feed = feedparser.parse(url)
-    source_name = feed.feed.get("title", "未知來源")
+    source = feed.feed.get("title", "未知來源")
     for entry in feed.entries:
         link = entry.link.strip()
         if link in seen:
             continue
-            
-        title = entry.title
-        title_lower = title.lower()
-        if any(keyword in title_lower for keyword in ["micronation", "sealand", "molossia", "seborga", "ladonia", "hutt river", "christiania", "asgardia", "micro-nation", "microstate"]):
-            news_list.append(f"**{title}**\n來源：{source_name}\n{link}")
+
+        raw_title = entry.title
+        # 關鍵字過濾（更廣泛抓微國家）
+        if any(k in raw_title.lower() for k in ["micronation","sealand","molossia","seborga","ladonia","hutt river","asgardia","micro nation","christiania","unrecognized state"]):
+            # 自動翻譯成繁體中文
+            try:
+                zh_title = GoogleTranslator(source='auto', target='zh-TW').translate(raw_title)
+            except:
+                zh_title = raw_title  # 翻譯失敗就用原文
+
+            news_lines.append(f"• {zh_title} （來源：{source}）")
             seen.add(link)
-            sent_count += 1
-
-# 發送所有新聞（每則一條訊息，最多10則避免洗版）
-for news in news_list[:10]:
-    webhook.content = news
-    webhook.execute()
-    time.sleep(1)  # 避免太快被限流
-
-# 永遠發一則總結（就算今天沒新聞也會報到）
-summary = f"【每日微國家新聞總結】\n今天共找到 {sent_count} 則新消息\n機器人完全正常運行中～"
-webhook.content = summary
-webhook.execute()
 
 # 儲存已發連結
 with open(seen_file, "w") as f:
     f.write("\n".join(seen))
 
-print(f"完成！今天發送 {sent_count} 則微國家新聞")
+# 整理成一篇美美的純文字訊息發送
+if news_lines:
+    content = "【今日微國家新聞速報】\n\n" + "\n\n".join(news_lines) + f"\n\n共 {len(news_lines)} 則新消息"
+else:
+    content = "【今日微國家新聞】\n\n今天暫無新消息～\n機器人正常運行中"
+
+webhook.content = content
+response = webhook.execute()
+
+print(f"發送完成！今日共 {len(news_lines)} 則新聞")
