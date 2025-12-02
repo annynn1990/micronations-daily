@@ -1,7 +1,16 @@
+import sys
+import os
+
+# 修復 audioop 錯誤（Python 3.13 專用猴子補丁）
+if 'audioop' not in sys.modules:
+    class DummyAudioOp:
+        def __getattr__(self, name):
+            raise NotImplementedError(f"audioop.{name} not implemented")
+    sys.modules['audioop'] = DummyAudioOp()
+
 import discord
 from discord.ext import tasks
 import feedparser
-import os
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -21,7 +30,7 @@ seen_links = set()
 
 @client.event
 async def on_ready():
-    print(f"微國家新聞 Bot 上線了！{client.user}")
+    print(f"Bot 上線了！{client.user}")
     channel = client.get_channel(CHANNEL_ID)
     if channel:
         await channel.send("微國家新聞 Bot 已上線！每天自動發送最新新聞～")
