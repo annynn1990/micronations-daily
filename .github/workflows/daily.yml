@@ -1,0 +1,22 @@
+name: 每日微國家新聞
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 每天 UTC 8:00 → 台灣時間下午 4 點
+  workflow_dispatch:      # 允許手動觸發
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+      - name: 執行腳本
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: python main.py
