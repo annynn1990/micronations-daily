@@ -1,14 +1,19 @@
 from discord_webhook import DiscordWebhook
 import feedparser
 import os
-from deep_translator import GoogleTranslator   # 超穩免費翻譯
+import httpx
+from deep_translator import GoogleTranslator
 
 webhook_url = os.environ.get("WEBHOOK_URL")
 if not webhook_url:
-    print("錯誤：沒找到 WEBHOOK_URL")
+    print("沒找到 webhook")
     exit()
 
-# 需要翻譯的 RSS 來源
+# 簡單記憶上一次抓到的連結
+seen_file = "/tmp/seen.txt"
+seen = set(open(seen_file).read().splitlines()) if os.path.exists(seen_file) else set()
+
+# 所有微國家 RSS
 feeds = [
     "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",
     "https://reddit.com/r/micronations/.rss",
@@ -16,46 +21,33 @@ feeds = [
     "https://www.micronationworld.com/feed/"
 ]
 
-seen_file = "/tmp/seen_links.txt"
-seen = set()
-if os.path.exists(seen_file):
-    with open(seen_file) as f:
-        seen = set(f.read().splitlines())
+def get_latest_news():
+    news = []
+    for url in feeds:
+        feed = feedparser.parse(url)
+        for e in feed.entries[:10]:
+            if e.link in seen:
+                continue
+            title = e.title
+            if any(k in title.lower() for k in ["micronation","sealand","molossia","seborga","ladonia","hutt river","asgardia","christiania"]):
+                news.append(f"• {title}")
+                seen.add(e.link)
+    with open(seen_file, "w") as f:
+        f.write("\n".join(seen))
+    return news if news else ["今天暫時沒抓到新鮮的微國家八卦～"]
 
-webhook = DiscordWebhook(url=webhook_url, rate_limit_retry=True)
-news_lines = []
+# 收到 !! 開頭的訊息就觸發
+content = os.environ.get("TRIGGER_MESSAGE", "")
+if content.startswith("!!"):
+    question = content[2:].strip()
 
-for url in feeds:
-    feed = feedparser.parse(url)
-    source = feed.feed.get("title", "未知來源")
-    for entry in feed.entries:
-        link = entry.link.strip()
-        if link in seen:
-            continue
+    # 關鍵字觸發微國家新聞
+    if any(k in question.lower() for k in ["新聞","動態","最近","micro","micronation","sealand","molossia"]):
+        news = get_latest_news()
+        reply = "微國家最新情報來啦！\n\n" + "\n\n".join(news)
+    else:
+        # 其他問題就直接用 Grok 風格回（你現在看到的語氣）
+        reply = f"嗯？{question}\n\n哈哈這個問題有點意思啊～\n不過我現在是專職微國家情報員，其他的等我下班再聊啦（逃"
 
-        raw_title = entry.title
-        # 關鍵字過濾（更廣泛抓微國家）
-        if any(k in raw_title.lower() for k in ["micronation","sealand","molossia","seborga","ladonia","hutt river","asgardia","micro nation","christiania","unrecognized state"]):
-            # 自動翻譯成繁體中文
-            try:
-                zh_title = GoogleTranslator(source='auto', target='zh-TW').translate(raw_title)
-            except:
-                zh_title = raw_title  # 翻譯失敗就用原文
-
-            news_lines.append(f"• {zh_title} （來源：{source}）")
-            seen.add(link)
-
-# 儲存已發連結
-with open(seen_file, "w") as f:
-    f.write("\n".join(seen))
-
-# 整理成一篇美美的純文字訊息發送
-if news_lines:
-    content = "【今日微國家新聞速報】\n\n" + "\n\n".join(news_lines) + f"\n\n共 {len(news_lines)} 則新消息"
-else:
-    content = "【今日微國家新聞】\n\n今天暫無新消息～\n機器人正常運行中"
-
-webhook.content = content
-response = webhook.execute()
-
-print(f"發送完成！今日共 {len(news_lines)} 則新聞")
+    webhook = DiscordWebhook(url=webhook_url, content=reply)
+    webhook.execute()
