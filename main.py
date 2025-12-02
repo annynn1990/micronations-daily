@@ -1,30 +1,47 @@
-import os
-import sys
-
-# 強制讓 discord.py 跳過 audioop（語音功能我們根本不用）
-sys.modules['audioop'] = object()
-
-import discord
-from discord.ext import tasks
+from discord_webhook import DiscordWebhook, DiscordEmbed
 import feedparser
+import os
+import time
 
-intents = discord.Intents.default()
-intents.message_content = True
-client = discord.Client(intents=intents)
+webhook_url = os.environ.get("WEBHOOK_URL")
+feeds = [
+    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",
+    "https://reddit.com/r/micronations/.rss",
+    "https://micronations.wiki/feed/",
+]
 
-@client.event
-async def on_ready():
-    print(f"微國家新聞 Bot 上線了！{client.user}")
-    channel = client.get_channel(int(os.environ.get("CHANNEL_ID")))
-    if channel:
-        await channel.send("微國家新聞 Bot 成功啟動！\n每天會自動發送最新微國家新聞～")
-        await channel.send("輸入 !ping 試試看我有沒有活著！")
+# 簡單記錄已發連結（用檔案）
+seen_file = "/tmp/seen_links.txt"
+seen = set()
+if os.path.exists(seen_file):
+    with open(seen_file) as f:
+        seen = set(f.read().splitlines())
 
-@client.event
-async def on_message(message):
-    if message.author == client.user:
-        return
-    if message.content == "!ping":
-        await message.channel.send("pong！微國家新聞機器人活著！")
+webhook = DiscordWebhook(url=webhook_url, rate_limit_retry=True)
 
-client.run(os.environ.get("DISCORD_BOT_TOKEN"))
+sent = 0
+for url in feeds:
+    feed = feedparser.parse(url)
+    for entry in feed.entries[:5]:
+        link = entry.link
+        if link in seen:
+            continue
+        title = entry.title
+        if any(k in title.lower() for k in ["micronation", "sealand", "molossia", "seborga"]):
+            embed = DiscordEmbed(title=title, url=link, color=0x00ff00)
+            embed.set_footer(text="每日微國家快訊")
+            webhook.add_embed(embed)
+            seen.add(link)
+            sent += 1
+
+# 每天發一則存活訊息
+embed = DiscordEmbed(title="微國家新聞機器人存活檢查", description=f"今天發送 {sent} 則新聞\n完全正常運行中～", color=0x00ff00)
+webhook.add_embed(embed)
+
+webhook.execute()
+
+# 儲存已發連結
+with open(seen_file, "w") as f:
+    f.write("\n".join(seen))
+
+print(f"完成！發送 {sent} 則新聞")
