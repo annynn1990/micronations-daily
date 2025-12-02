@@ -4,13 +4,17 @@ import os
 import time
 
 webhook_url = os.environ.get("WEBHOOK_URL")
+if not webhook_url:
+    print("錯誤：沒找到 WEBHOOK_URL")
+    exit()
+
 feeds = [
-    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",
+    "https://www.google.com/alerts/feeds/06026802446385447276/13935726808984734935",  # micronation 關鍵字
     "https://reddit.com/r/micronations/.rss",
     "https://micronations.wiki/feed/",
+    "https://www.micronationworld.com/feed/"
 ]
 
-# 簡單記錄已發連結（用檔案）
 seen_file = "/tmp/seen_links.txt"
 seen = set()
 if os.path.exists(seen_file):
@@ -19,29 +23,37 @@ if os.path.exists(seen_file):
 
 webhook = DiscordWebhook(url=webhook_url, rate_limit_retry=True)
 
-sent = 0
+sent_count = 0
+news_list = []
+
 for url in feeds:
     feed = feedparser.parse(url)
-    for entry in feed.entries[:5]:
-        link = entry.link
+    source_name = feed.feed.get("title", "未知來源")
+    for entry in feed.entries:
+        link = entry.link.strip()
         if link in seen:
             continue
+            
         title = entry.title
-        if any(k in title.lower() for k in ["micronation", "sealand", "molossia", "seborga"]):
-            embed = DiscordEmbed(title=title, url=link, color=0x00ff00)
-            embed.set_footer(text="每日微國家快訊")
-            webhook.add_embed(embed)
+        title_lower = title.lower()
+        if any(keyword in title_lower for keyword in ["micronation", "sealand", "molossia", "seborga", "ladonia", "hutt river", "christiania", "asgardia", "micro-nation", "microstate"]):
+            news_list.append(f"**{title}**\n來源：{source_name}\n{link}")
             seen.add(link)
-            sent += 1
+            sent_count += 1
 
-# 每天發一則存活訊息
-embed = DiscordEmbed(title="微國家新聞機器人存活檢查", description=f"今天發送 {sent} 則新聞\n完全正常運行中～", color=0x00ff00)
-webhook.add_embed(embed)
+# 發送所有新聞（每則一條訊息，最多10則避免洗版）
+for news in news_list[:10]:
+    webhook.content = news
+    webhook.execute()
+    time.sleep(1)  # 避免太快被限流
 
+# 永遠發一則總結（就算今天沒新聞也會報到）
+summary = f"【每日微國家新聞總結】\n今天共找到 {sent_count} 則新消息\n機器人完全正常運行中～"
+webhook.content = summary
 webhook.execute()
 
 # 儲存已發連結
 with open(seen_file, "w") as f:
     f.write("\n".join(seen))
 
-print(f"完成！發送 {sent} 則新聞")
+print(f"完成！今天發送 {sent_count} 則微國家新聞")
