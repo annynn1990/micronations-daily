@@ -58,3 +58,18 @@ for feed_url in FEEDS:
 
 save_seen(new_seen)
 print("今日微國家新聞推送完成！")
+
+# 強制發送測試訊息（不管有沒有新聞都會發）
+requests.post(
+    WEBHOOK_URL,
+    json={
+        "content": "**微國家新聞機器人啟動成功！**",
+        "embeds": [{
+            "title": "測試訊息",
+            "description": "如果您看到這則訊息，代表一切設定正確！\n每天 16:00 會自動發送最新微國家新聞～",
+            "color": 5814783,
+            "footer": {"text": "GitHub Actions + Discord"}
+        }]
+    }
+)
+print("測試訊息已強制發送！")
